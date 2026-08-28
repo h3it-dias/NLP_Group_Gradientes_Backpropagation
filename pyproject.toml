@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nlp-group-gradientes-backpropagation"
+version = "0.1.0"
+description = "Notebooks e módulos de estudo sobre PyTorch: autograd, backpropagation e embeddings"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "graphviz>=0.20",
+    "torchviz>=0.0.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pytorch_redes", "embeddings"]
