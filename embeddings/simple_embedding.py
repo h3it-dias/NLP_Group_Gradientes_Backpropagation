@@ -45,16 +45,34 @@ def encode_dataset(sentences: list[str], vocab: Vocab) -> tuple[torch.Tensor, to
     return torch.tensor(tokens, dtype=torch.long), torch.tensor(offsets[:-1], dtype=torch.long)
 
 
-def train_demo(epochs: int = 200, embedding_dim: int = 16, lr: float = 0.1) -> tuple[EmbeddingBagClassifier, Vocab]:
+def train_demo(
+    epochs: int = 200,
+    embedding_dim: int = 16,
+    lr: float = 0.1,
+    vocab: Vocab | None = None,
+    pretrained_embedding: torch.Tensor | None = None,
+    verbose: bool = True,
+) -> tuple[EmbeddingBagClassifier, Vocab, list[float]]:
+    """Treina o classificador de sentimento. Se `pretrained_embedding` for
+    passado (uma tabela vocab_size x embedding_dim já treinada em outra
+    tarefa, ex. CBOW), ela substitui a inicialização aleatória do
+    nn.EmbeddingBag — é o "aproveitar embeddings prontos" que word2vec/GloVe
+    fazem na prática. `vocab` precisa ser o vocabulário usado pra treinar
+    esse embedding, senão os índices das palavras não batem."""
     sentences = POSITIVE + NEGATIVE
     labels = torch.tensor([1] * len(POSITIVE) + [0] * len(NEGATIVE), dtype=torch.long)
-    vocab = build_vocab(sentences)
+    if vocab is None:
+        vocab = build_vocab(sentences)
 
     tokens, offsets = encode_dataset(sentences, vocab)
     model = EmbeddingBagClassifier(len(vocab), embedding_dim, num_classes=2)
+    if pretrained_embedding is not None:
+        model.embedding.weight = nn.Parameter(pretrained_embedding.clone())
+
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
     loss_fn = nn.CrossEntropyLoss()
 
+    losses = []
     for epoch in range(1, epochs + 1):
         model.train()
         optimizer.zero_grad()
@@ -62,14 +80,15 @@ def train_demo(epochs: int = 200, embedding_dim: int = 16, lr: float = 0.1) -> t
         loss = loss_fn(logits, labels)
         loss.backward()
         optimizer.step()
-        if epoch % 50 == 0 or epoch == 1:
+        losses.append(loss.item())
+        if verbose and (epoch % 50 == 0 or epoch == 1):
             print(f"epoch {epoch:>3d} | loss {loss.item():.4f}")
 
-    return model, vocab
+    return model, vocab, losses
 
 
 if __name__ == "__main__":
-    model, vocab = train_demo()
+    model, vocab, _ = train_demo()
 
     test_sentences = ["eu amo esse dia", "isso foi horrivel"]
     tokens, offsets = encode_dataset(test_sentences, vocab)

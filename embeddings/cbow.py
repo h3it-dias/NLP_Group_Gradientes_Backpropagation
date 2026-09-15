@@ -31,10 +31,14 @@ def make_cbow_pairs(corpus: list[str], vocab: Vocab, window: int = 2) -> list[tu
 
 
 def train_demo(
-    epochs: int = 300, embedding_dim: int = 16, window: int = 2, lr: float = 0.05
+    epochs: int = 300,
+    embedding_dim: int = 16,
+    window: int = 2,
+    lr: float = 0.05,
+    corpus: list[str] = TOY_CORPUS,
 ) -> tuple[CBOWModel, Vocab]:
-    vocab = build_vocab(TOY_CORPUS)
-    pairs = make_cbow_pairs(TOY_CORPUS, vocab, window=window)
+    vocab = build_vocab(corpus)
+    pairs = make_cbow_pairs(corpus, vocab, window=window)
     contexts = torch.tensor([p[0] for p in pairs], dtype=torch.long)
     centers = torch.tensor([p[1] for p in pairs], dtype=torch.long)
 
