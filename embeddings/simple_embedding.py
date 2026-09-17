@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from .training import train_loop
 from .vocab import Vocab, build_vocab, tokenize
 
 POSITIVE = [
@@ -70,19 +71,7 @@ def train_demo(
         model.embedding.weight = nn.Parameter(pretrained_embedding.clone())
 
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
-
-    losses = []
-    for epoch in range(1, epochs + 1):
-        model.train()
-        optimizer.zero_grad()
-        logits = model(tokens, offsets)
-        loss = loss_fn(logits, labels)
-        loss.backward()
-        optimizer.step()
-        losses.append(loss.item())
-        if verbose and (epoch % 50 == 0 or epoch == 1):
-            print(f"epoch {epoch:>3d} | loss {loss.item():.4f}")
+    losses = train_loop(model, optimizer, lambda: model(tokens, offsets), labels, epochs=epochs, verbose=verbose)
 
     return model, vocab, losses
 

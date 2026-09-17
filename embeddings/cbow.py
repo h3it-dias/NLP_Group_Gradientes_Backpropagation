@@ -4,6 +4,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from .training import train_loop
 from .vocab import TOY_CORPUS, Vocab, build_vocab, nearest_neighbors, tokenize
 
 
@@ -44,17 +45,7 @@ def train_demo(
 
     model = CBOWModel(len(vocab), embedding_dim)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
-
-    for epoch in range(1, epochs + 1):
-        model.train()
-        optimizer.zero_grad()
-        logits = model(contexts)
-        loss = loss_fn(logits, centers)
-        loss.backward()
-        optimizer.step()
-        if epoch % 50 == 0 or epoch == 1:
-            print(f"epoch {epoch:>3d} | loss {loss.item():.4f}")
+    train_loop(model, optimizer, lambda: model(contexts), centers, epochs=epochs)
 
     return model, vocab
 
