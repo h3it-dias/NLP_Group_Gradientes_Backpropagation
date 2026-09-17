@@ -1,8 +1,16 @@
 # embeddings
 
-Projeto prático final do grupo: usa embeddings de palavras como fio condutor
-pra explicar gradiente, regra da cadeia e `.backward()` na prática, e depois
+Projeto prático do grupo: usa embeddings de palavras como fio condutor pra
+explicar gradiente, regra da cadeia e `.backward()` na prática, e depois
 mostra uma aplicação real desses embeddings.
+
+> **Nota:** para a entrega "passo mínimo + intervenção" (Partes 1 e 2 abaixo,
+> em `gradient_step.py`), a versão de apresentação do grupo passou a ser
+> `notebooks/backprop_do_zero.ipynb` (motor `Value`, sem precisar decompor
+> `nn.Linear` escalar por escalar). `gradient_step.py` continua funcional e
+> fica aqui como referência/material de estudo. A Parte 3
+> (`word2vec_transfer.py`, embeddings pré-treinados) não tem equivalente lá
+> e continua sendo a peça de referência para esse tema.
 
 ## Estrutura
 
@@ -10,6 +18,7 @@ mostra uma aplicação real desses embeddings.
 - `vocab.py` — vocabulário compartilhado (`Vocab`, `build_vocab`, `tokenize`), `TOY_CORPUS` (frases sobre gato/cachorro) e `nearest_neighbors` (busca por similaridade de cosseno).
 - `simple_embedding.py` — `nn.EmbeddingBag` + classificador linear de sentimento (positivo/negativo), treinado num corpus de frases de sentimento (`POSITIVE`/`NEGATIVE`).
 - `cbow.py` / `skipgram.py` — Word2Vec CBOW e Skip-gram, treinados por padrão no `TOY_CORPUS`.
+- `training.py` — `train_loop`, o loop de treino (forward → loss → backward → step → log) compartilhado por `cbow.py`, `skipgram.py` e `simple_embedding.py`.
 - `visualize.py` — diagramas de arquitetura (camadas/shapes) e grafos de autograd (via `torchviz.make_dot`) dos três modelos acima.
 
 **Os 3 experimentos didáticos sobre gradiente:**
@@ -33,6 +42,72 @@ python3 -m embeddings.visualize   # gera todos os diagramas de uma vez
 ```
 
 Dependências: `torch`, `torchvision`, `graphviz` (+ binário `dot` do sistema), `torchviz`.
+
+> Nenhum dos três modelos abaixo fixa `torch.manual_seed`, então os números
+> exatos de perda e vizinhos variam a cada execução — o padrão (perda caindo,
+> vizinhos fazendo algum sentido) é o que importa, não o valor exato.
+
+---
+
+## Fundamentos — vocabulário e as três arquiteturas de embedding
+
+### `simple_embedding.py`
+
+```
+epoch   1 | loss 0.6875
+epoch  50 | loss 0.4858
+epoch 100 | loss 0.3604
+epoch 150 | loss 0.2652
+epoch 200 | loss 0.1958
+"eu amo esse dia" -> positivo
+"isso foi horrivel" -> negativo
+```
+
+A perda cai a cada 50 épocas impressa (comportamento esperado de um
+classificador aprendendo); as duas frases de teste (que não estavam no
+treino) são classificadas corretamente ao final.
+
+### `cbow.py` / `skipgram.py`
+
+```
+# cbow.py
+epoch   1 | loss 3.0978
+epoch 300 | loss 0.0003
+vizinhos de 'gato': [('a', 0.294), ('marrom', 0.290), ('parque', 0.237), ...]
+vizinhos de 'cachorro': [('mia', 0.490), ('<unk>', 0.368), ('late', 0.319), ...]
+```
+
+A perda do CBOW despenca a quase zero — é overfitting normal num corpus de
+7 frases (`TOY_CORPUS`), não um sinal de que os embeddings ficaram bons.
+`vizinhos de 'X'` são as palavras cujo vetor de embedding tem maior
+similaridade de cosseno com o de `X` (função `nearest_neighbors` em
+`vocab.py`) — com um corpus tão pequeno, os vizinhos costumam ser bem
+ruidosos (não espere sinônimos de verdade). O `skipgram.py` imprime o
+mesmo formato; a perda estabiliza mais alto (~1.7) em vez de ir a zero,
+porque cada centro tem que prever *várias* palavras de contexto diferentes,
+o que dificulta decorar o corpus.
+
+### Diagramas de `visualize.py`
+
+Dois tipos, para os três modelos acima:
+
+**Arquitetura** (`simple_embedding.png`, `cbow.png`, `skipgram.png`) — um
+fluxograma simples, de cima pra baixo, com uma caixa por camada mostrando
+o nome (`nn.EmbeddingBag`, `nn.Linear`, ...) e o shape que entra/sai
+(`V`=tamanho do vocabulário, `D`=dimensão do embedding, `C`=número de
+classes, `W`=tamanho da janela de contexto). Não roda nada de verdade —
+é só uma descrição estática da arquitetura.
+
+**Grafo de autograd** (`simple_embedding_autograd.png`, etc.) — gerado de
+verdade com `torchviz.make_dot` a partir de um forward real. Azul =
+parâmetro treinável (nome + shape, ex. `embedding.weight (10, 4)`); cinza
+= uma operação do grafo de `.backward()` (o nome é literalmente a classe
+interna do PyTorch, ex. `AccumulateGrad` é o nó que acumula gradiente num
+parâmetro folha, `EmbeddingBagBackward0`/`TBackward0`/`AddmmBackward0` são
+as operações de lookup, transposição e `matmul+bias` que compõem o
+`nn.EmbeddingBag`/`nn.Linear`); verde = o tensor de saída final. Esse
+grafo mostra *shape*, não o valor de cada peso — pra isso é a Parte 1
+abaixo.
 
 ---
 
@@ -70,6 +145,12 @@ componente do embedding e cada multiplicação tem sua própria caixa (`data`
 e `grad`), no estilo do `draw_dot` do micrograd — os dois neurônios de
 saída aparecem agrupados visualmente num contorno próprio.
 
+**Cores das caixas:** azul = parâmetro treinável (peso, bias ou componente
+do embedding — o que o `optimizer.step()` de fato altera); branco = valor
+intermediário calculado a partir de outros (produto, soma, logit); verde =
+`loss` e a probabilidade da classe alvo (`prob[j]` destacado), ou seja, o
+ponto onde `.backward()` começa e o dado que ele está tentando reduzir.
+
 **Como ler os números:** o gradiente que chega em cada `logit[j]` se
 distribui de dois jeitos diferentes ao passar pra trás:
 - Pela **soma** (`termo0 + termo1 + termo2 + termo3 + bias`): todo mundo
@@ -105,7 +186,8 @@ se `j` for a classe alvo, ou só `prob[j]` caso contrário — mudar qual classe
 se propaga pra trás pra tudo que depende dele.
 
 `gradient_step_intervencao.png` mostra esse segundo cenário no mesmo
-formato visual da parte 1, com a nova classe alvo destacada em verde.
+formato visual da parte 1 (mesma legenda de cores acima), com a nova
+classe alvo destacada em verde.
 
 ## Parte 3 — exemplo prático: embeddings pré-treinados numa tarefa real
 
